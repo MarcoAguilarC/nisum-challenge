@@ -1,0 +1,113 @@
+sourceSets {
+    intTest {
+        java.srcDir file('src/intTest/java')
+        resources.srcDir file('src/intTest/resources')
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    intTestImplementation.extendsFrom testImplementation
+    intTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs the integration tests.'
+    group = 'verification'
+
+    testClassesDirs = sourceSets.intTest.output.classesDirs
+    classpath = sourceSets.intTest.runtimeClasspath
+
+    shouldRunAfter test
+    useJUnitPlatform()
+    jacoco.destinationFile = layout.buildDirectory.file('jacoco/integrationTest.exec').get().asFile
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    finalizedBy tasks.named('jacocoTestReport')
+    jacoco.destinationFile = layout.buildDirectory.file('jacoco/test.exec').get().asFile
+}
+
+jacocoTestReport {
+    dependsOn tasks.named('test'), tasks.named('integrationTest')
+    reports {
+        xml.required = true
+        csv.required = false
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco')
+    }
+    classDirectories.setFrom(files(
+            sourceSets.main.output.classesDirs
+    ))
+    sourceDirectories.setFrom(files(
+            sourceSets.main.java.srcDirs
+    ))
+    executionData.setFrom(files(
+            layout.buildDirectory.file('jacoco/test.exec'),
+            layout.buildDirectory.file('jacoco/integrationTest.exec')
+    ))
+}
+
+jacocoTestCoverageVerification {
+    dependsOn tasks.named('test'), tasks.named('integrationTest')
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.90
+            }
+        }
+    }
+    classDirectories.setFrom(files(
+            sourceSets.main.output.classesDirs
+    ))
+    sourceDirectories.setFrom(files(
+            sourceSets.main.java.srcDirs
+    ))
+    executionData.setFrom(files(
+            layout.buildDirectory.file('jacoco/test.exec'),
+            layout.buildDirectory.file('jacoco/integrationTest.exec')
+    ))
+}
+
+pitest {
+    testPlugin = 'junit5'
+    junit5PluginVersion = '1.2.2'
+    pitestVersion = '1.19.0'
+
+    testSourceSets = [sourceSets.test]
+
+    targetClasses = [
+            'com.nisum.challenge.application.**',
+            'com.nisum.challenge.domain.**',
+            'com.nisum.challenge.infrastructure.in.web.**'
+    ]
+    targetTests = ['com.nisum.challenge.*']
+
+    excludedClasses = [
+            '**/*Application',
+            '**/*Config',
+            '**/*MapperImpl',
+            '**/*Dto', '**/*DTO'
+    ]
+
+    useClasspathFile = true
+    threads = 4
+    timeoutConstInMillis = 8000
+}
+
+tasks.named('pitest') {
+    outputs.upToDateWhen { false }
+    doLast {
+        def reportDir = layout.buildDirectory.dir('reports/pitest').get().asFile
+        logger.lifecycle "Pitest mutation report is available at: file://${reportDir}/index.html"
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('integrationTest'), tasks.named('jacocoTestCoverageVerification'), tasks.named('pitest')
+}
